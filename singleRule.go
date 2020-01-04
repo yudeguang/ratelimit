@@ -37,6 +37,9 @@ func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int,
 	if len(estimatedNumberOfOnlineUserNum) > 0 {
 		estimatedNumberOfOnlineUsers = estimatedNumberOfOnlineUserNum[0]
 	}
+	if estimatedNumberOfOnlineUsers == 0 {
+		estimatedNumberOfOnlineUsers = numberOfAllowedAccesses
+	}
 	//设立默认清除过期数据的间隔,用于清除过期数据,并定期清理内存
 	cleanupInterval := defaultExpiration / 100
 	if cleanupInterval < time.Nanosecond*1 {
