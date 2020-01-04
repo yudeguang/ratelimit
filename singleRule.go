@@ -1,17 +1,15 @@
 package ratelimit
 
 import (
-	"encoding/json"
-	"fmt"
 	"github.com/yudeguang/hashset"
-	"sort"
+	"log"
 	"sync"
 	"time"
 )
 
-//某单位时间内允许多少次访问
+//单组用户访问控制策略
 type singleRule struct {
-	defaultExpiration            time.Duration       //每条访问记录需要保存的时长，也就是过期时间
+	defaultExpiration            time.Duration       //表示在某个时间段内,也是每条访问记录需要保存的时长，也就是过期时间
 	cleanupInterval              time.Duration       //默认多长时间需要执行一次清除操作
 	numberOfAllowedAccesses      int                 //每个用户在相应时间段内最多允许访问的次数
 	estimatedNumberOfOnlineUsers int                 //单位时间内预计有多少个用户会访问网站，建议选用一个稍大于实际值的值，以减少内存分配次数
@@ -22,22 +20,24 @@ type singleRule struct {
 }
 
 /*
-初始化一个单规则频率控制策略
-例：
-vc := newsingleRule(time.Minute*30, 50) 或者 vc := newsingleRule(time.Minute*30, 50,1000)
+初始化一个条单组用户访问控制控制策略,例：
+vc := newsingleRule(time.Minute*30, 50)
+或者 vc := newsingleRule(time.Minute*30, 50, 1000)
 它表示:
 在30分钟内每个用户最多允许访问50次,并且我们预计在这30分钟内大致有1000个用户会访问我们的网站
-1000为可选字段，此参数可默认不填写，主要是用于提升性能，绝大部分情况下无需关注此参数。
+1000为可选字段，此参数可默认不填写，主要是用于提升性能，类似于声明切片时的cap,绝大部分情况下无需关注此参数。
 */
 func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int, estimatedNumberOfOnlineUserNum ...int) *singleRule {
-	//对于默认过期时间defaultExpiration,如果小于1秒，从效率的角度讲，
-	//整个算法实际上可以衰退为令牌桶算法golang.org/x/time/rate,以应
-	//对超高并发的情况，在此并不实现。
+	/*
+		对于默认过期时间defaultExpiration,如果小于1秒，从效率的角度讲，
+		整个算法实际上可以衰退为令牌桶算法golang.org/x/time/rate,以应
+		对超高并发的情况，在此并不实现。
+	*/
 	estimatedNumberOfOnlineUsers := 0
 	if len(estimatedNumberOfOnlineUserNum) > 0 {
 		estimatedNumberOfOnlineUsers = estimatedNumberOfOnlineUserNum[0]
 	}
-	//设立默认清除过期数据的间隔。设立此数据的目的是在于防止用户数量无限增长，并减少内存占用。
+	//设立默认清除过期数据的间隔,用于清除过期数据,并定期清理内存
 	cleanupInterval := defaultExpiration / 100
 	if cleanupInterval < time.Nanosecond*1 {
 		cleanupInterval = time.Nanosecond * 1
@@ -48,8 +48,14 @@ func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int,
 }
 
 func createsingleRule(defaultExpiration, cleanupInterval time.Duration, numberOfAllowedAccesses, estimatedNumberOfOnlineUsers int) *singleRule {
-	if numberOfAllowedAccesses < 0 || estimatedNumberOfOnlineUsers < 0 {
-		panic("numberOfAllowedAccesses and estimatedNumberOfOnlineUsers must>0")
+	//规范化输入参数
+	if numberOfAllowedAccesses <= 0 {
+		log.Println("请检察参数numberOfAllowedAccesses设置是否合理，在此被强行修改为1")
+		numberOfAllowedAccesses = 1
+	}
+	if estimatedNumberOfOnlineUsers <= 0 {
+		log.Println("请检察参数estimatedNumberOfOnlineUsers设置是否合理，在此被强行修改为1")
+		estimatedNumberOfOnlineUsers = 1
 	}
 	var vc singleRule
 	var lock sync.Mutex
@@ -70,15 +76,13 @@ func createsingleRule(defaultExpiration, cleanupInterval time.Duration, numberOf
 }
 
 //是否允许访问,允许访问则往访问记录中加入一条访问记录
-//例: AllowVisit("usernameexample")
 func (this *singleRule) AllowVisit(key interface{}) bool {
 	return this.add(key) == nil
 }
 
 //是否允许某IP的用户访问
-//例: AllowVisitIP("127.0.0.1")
-func (this *singleRule) AllowVisitIP(ip string) bool {
-	ipInt64 := Ip4StringToInt64(ip)
+func (this *singleRule) AllowVisitByIP(ip string) bool {
+	ipInt64 := ip4StringToInt64(ip)
 	if ipInt64 == 0 {
 		return false
 	}
@@ -86,7 +90,6 @@ func (this *singleRule) AllowVisitIP(ip string) bool {
 }
 
 //剩余访问次数
-//例: RemainingVisits("usernameexample")
 func (this *singleRule) RemainingVisits(key interface{}) int {
 	//先前曾经有访问记录，则取剩余空间长度。
 	if index, exist := this.indexes.Load(key); exist {
@@ -98,9 +101,8 @@ func (this *singleRule) RemainingVisits(key interface{}) int {
 }
 
 //某IP剩余访问次数
-//例: RemainingVisitsIP("127.0.0.1")
 func (this *singleRule) RemainingVisitsIP(ip string) int {
-	ipInt64 := Ip4StringToInt64(ip)
+	ipInt64 := ip4StringToInt64(ip)
 	if ipInt64 == 0 {
 		return 0
 	}
@@ -169,8 +171,11 @@ func (this *singleRule) deleteExpiredOnce() {
 	})
 }
 
-//GC的目的在于，防止出现访问峰值之后，实际的访问峰值远大于我们假想的峰值estimatedNumberOfOnlineUsers
-//之后用户数又大幅下降，这时候，为了减少内存占用，需要进行数据回收操作，重新分配空间。
+/*
+回收未使用的空间
+GC的目的在于，防止出现访问峰值之后，实际的访问峰值远大于我们假想的峰值estimatedNumberOfOnlineUsers
+之后用户数又大幅下降，这时候，为了减少内存占用，需要进行数据回收操作，重新分配空间。
+*/
 func (this *singleRule) gc() {
 	this.lock.Lock()
 	defer this.lock.Unlock()
@@ -210,9 +215,11 @@ func (this *singleRule) gc() {
 	}
 }
 
-//是否需要对visitorRecords进行清理
-//如果visitorRecords数据空的太多,则需要进行清理操作
-//并且长度远大于默认在线用户数量，则需要进行GC操作
+/*
+是否需要进行数据清理
+如果visitorRecords数据空的太多,则需要进行清理操作
+并且长度远大于默认在线用户数量，则需要进行GC操作
+*/
 func (this *singleRule) needGc() bool {
 	curLen := len(this.visitorRecords)
 	unUsedLen := len(this.notUsedVisitorRecordsIndex.Items)
@@ -227,63 +234,4 @@ func (this *singleRule) needGc() bool {
 		return true
 	}
 	return false
-}
-
-//当前在线用户总数
-func (this *singleRule) CurOnlineUserNum() int {
-	this.deleteExpiredOnce()
-	return len(this.visitorRecords) - len(this.notUsedVisitorRecordsIndex.Items)
-}
-
-type printHelper struct {
-	DefaultExpiration            string //每条访问记录需要保存的时长，也就是过期时间
-	NumberOfAllowedAccesses      int    //每个用户在相应时间段内最多允许访问的次数
-	EstimatedNumberOfOnlineUsers int    //预计的最大在线用户数
-	CurOnlineUserNum             int
-	CurOnlineUserInfo            []userInfo
-}
-type userInfo struct {
-	UserName        string //用户或IP
-	Used            int    //已使用
-	RemainingVisits int    //剩余访问次数
-
-}
-
-//把在线用户数据转化成JSON输出
-func (this *singleRule) OnlineUserInfoToJson() string {
-	var p printHelper
-	p.DefaultExpiration = this.defaultExpiration.String()
-	p.NumberOfAllowedAccesses = this.numberOfAllowedAccesses
-	p.EstimatedNumberOfOnlineUsers = this.estimatedNumberOfOnlineUsers
-	var CurOnlineUserInfo []userInfo
-	this.indexes.Range(func(k, v interface{}) bool {
-		this.lock.Lock() //range里面不能用defer
-		index := v.(int)
-		//防止越界出错，理论上不存在这种情况
-		if index < len(this.visitorRecords) && index >= 0 {
-			this.visitorRecords[index].DeleteExpired()
-			//删除完过期数据之后，如果该用户的所有访问记录均过期了，那么就删除该用户
-			//并把该空间返还给notUsedVisitorRecordsIndex以便下次重复使用
-			if this.visitorRecords[index].UsedSize() == 0 {
-				this.indexes.Delete(k)
-				this.notUsedVisitorRecordsIndex.Add(index)
-			} else {
-				//加入统计数据表
-				var u userInfo
-				u.UserName = fmt.Sprint(k) //k.(string)
-				u.RemainingVisits = this.visitorRecords[index].UnUsedSize()
-				u.Used = this.visitorRecords[index].UsedSize()
-				CurOnlineUserInfo = append(CurOnlineUserInfo, u)
-			}
-		} else {
-			this.indexes.Delete(k)
-		}
-		this.lock.Unlock()
-		return true
-	})
-	sort.Slice(CurOnlineUserInfo, func(i int, j int) bool { return CurOnlineUserInfo[i].UserName < CurOnlineUserInfo[j].UserName })
-	p.CurOnlineUserInfo = CurOnlineUserInfo
-	p.CurOnlineUserNum = len(p.CurOnlineUserInfo)
-	b, _ := json.Marshal(p)
-	return string(b)
 }

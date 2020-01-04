@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+/*
+用环形队列做为底层数据结构来存储用户访问数据
+*/
+
 //使用切片实现的队列
 type circleQueueInt64 struct {
 	maxSize int     //比实际队列长度大1
