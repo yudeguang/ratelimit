@@ -37,6 +37,7 @@ func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int,
 	if len(estimatedNumberOfOnlineUserNum) > 0 {
 		estimatedNumberOfOnlineUsers = estimatedNumberOfOnlineUserNum[0]
 	}
+	//estimatedNumberOfOnlineUsers没填写就默认用numberOfAllowedAccesses
 	if estimatedNumberOfOnlineUsers == 0 {
 		estimatedNumberOfOnlineUsers = numberOfAllowedAccesses
 	}
