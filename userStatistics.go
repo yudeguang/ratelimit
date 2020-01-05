@@ -20,7 +20,7 @@ func (this *Rule) RemainingVisits(key interface{}) []int {
 
 /*
 以IP作为用户名，此用户剩余访问次数,例:
-RemainingVisitsByIP("127.0.0.1")
+RemainingVisitsByIP4("127.0.0.1")
 */
 func (this *Rule) RemainingVisitsByIP4(ip string) []int {
 	ipInt64 := ip4StringToInt64(ip)
@@ -30,7 +30,7 @@ func (this *Rule) RemainingVisitsByIP4(ip string) []int {
 	return this.RemainingVisits(ipInt64)
 }
 
-//获得当前所有的在线用户,注意所有用int64存储的用户会被默认认为是IP地址，会被转换为IP的字符串形式
+//获得当前所有的在线用户,注意所有用int64存储的用户会被默认认为是IP地址，会被自动转换为IP的字符串形式输出以方便查看
 func (this *Rule) GetCurOnlineUsers() []string {
 	var users []string
 	for i := range this.rules {
