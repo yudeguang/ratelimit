@@ -20,3 +20,12 @@ func ip4StringToInt64(ip string) int64 {
 	ret.SetBytes(net.ParseIP(ip).To4())
 	return ret.Int64()
 }
+
+//判断是否是IP地址，同时支持IP4,IP6
+func IsIP(ip string) bool {
+	address := net.ParseIP(ip)
+	if address == nil {
+		return false
+	}
+	return true
+}
