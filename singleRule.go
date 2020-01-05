@@ -84,15 +84,6 @@ func (this *singleRule) AllowVisit(key interface{}) bool {
 	return this.add(key) == nil
 }
 
-//是否允许某IP的用户访问
-func (this *singleRule) AllowVisitByIP(ip string) bool {
-	ipInt64 := ip4StringToInt64(ip)
-	if ipInt64 == 0 {
-		return false
-	}
-	return this.AllowVisit(ipInt64)
-}
-
 //剩余访问次数
 func (this *singleRule) RemainingVisits(key interface{}) int {
 	//先前曾经有访问记录，则取剩余空间长度。

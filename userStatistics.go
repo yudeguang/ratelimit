@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"fmt"
+	"github.com/yudeguang/slice"
 	"sort"
 )
 
@@ -21,7 +22,7 @@ func (this *Rule) RemainingVisits(key interface{}) []int {
 以IP作为用户名，此用户剩余访问次数,例:
 RemainingVisitsByIP("127.0.0.1")
 */
-func (this *Rule) RemainingVisitsByIP(ip string) []int {
+func (this *Rule) RemainingVisitsByIP4(ip string) []int {
 	ipInt64 := ip4StringToInt64(ip)
 	if ipInt64 == 0 {
 		return []int{}
@@ -29,34 +30,23 @@ func (this *Rule) RemainingVisitsByIP(ip string) []int {
 	return this.RemainingVisits(ipInt64)
 }
 
-//获得当前所有的在线用户
-func (this *Rule) CurOnlineUsers() [][]string {
-	var users [][]string
+//获得当前所有的在线用户,注意所有用int64存储的用户会被默认认为是IP地址，会被转换为IP的字符串形式
+func (this *Rule) GetCurOnlineUsers() []string {
+	var users []string
 	for i := range this.rules {
-		var user []string
 		f := func(k, v interface{}) bool {
-			user = append(user, fmt.Sprint(k))
+			var user string
+			switch k.(type) {
+			case int64:
+				user = int64ToIp4String(k.(int64))
+			default:
+				user = fmt.Sprint(k)
+			}
+			users = slice.InsertIgnoreString(users, user)
 			return true
 		}
-		sort.Strings(user)
 		this.rules[i].indexes.Range(f)
-		users = append(users, user)
 	}
-	return users
-}
-
-//获取当前所有访问过的IP,前提是我们必须是以IP作为用户名存储，否则程序会崩溃(k.(int64))
-func (this *Rule) CurOnlineIPs() [][]string {
-	var users [][]string
-	for i := range this.rules {
-		var user []string
-		f := func(k, v interface{}) bool {
-			user = append(user, int64ToIp4String(k.(int64)))
-			return true
-		}
-		sort.Strings(user)
-		this.rules[i].indexes.Range(f)
-		users = append(users, user)
-	}
+	sort.Strings(users)
 	return users
 }

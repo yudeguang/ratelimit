@@ -67,9 +67,9 @@ func (this *Rule) AllowVisit(user interface{}) bool {
 /*
 以IP作为用户名，判断该用户是否允许访问,例:
 AllowVisitByIP("127.0.0.1")
-在实际的网站运营中，往往需要以IP作为判断用户的标准
+在实际的网站运营中，往往需要以IP作为判断用户的标准，IP转换为int64存储可略微减少内存占用
 */
-func (this *Rule) AllowVisitByIP(ip string) bool {
+func (this *Rule) AllowVisitByIP4(ip string) bool {
 	ipInt64 := ip4StringToInt64(ip)
 	if ipInt64 == 0 {
 		return false
