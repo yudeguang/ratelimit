@@ -45,7 +45,7 @@ func (this *Rule) GetCurOnlineUsers() []string {
 			users = slice.InsertIgnoreString(users, user)
 			return true
 		}
-		this.rules[i].indexes.Range(f)
+		this.rules[i].usedRecordsIndex.Range(f)
 	}
 	sort.Strings(users)
 	return users

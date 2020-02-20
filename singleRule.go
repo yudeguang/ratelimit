@@ -2,21 +2,20 @@ package ratelimit
 
 import (
 	"github.com/yudeguang/hashset"
-	"log"
 	"sync"
 	"time"
 )
 
 //单组用户访问控制策略
 type singleRule struct {
-	defaultExpiration            time.Duration       //表示在某个时间段内,也是每条访问记录需要保存的时长，也就是过期时间
-	cleanupInterval              time.Duration       //默认多长时间需要执行一次清除操作
-	numberOfAllowedAccesses      int                 //每个用户在相应时间段内最多允许访问的次数
-	estimatedNumberOfOnlineUsers int                 //单位时间内预计有多少个用户会访问网站，建议选用一个稍大于实际值的值，以减少内存分配次数
-	indexes                      sync.Map            //索引：key代表用户名或IP；value代表visitorRecords中的索引位置
-	visitorRecords               []*circleQueueInt64 //存储用户访问记录
-	notUsedVisitorRecordsIndex   *hashset.SetInt     //对应visitorRecords中未使用的数据的索引位置
-	lock                         *sync.Mutex         //锁
+	defaultExpiration            time.Duration       //表示计时周期,同时也是每条访问记录需要保存的时长，超过这个时长的数据记录将会被清除
+	cleanupInterval              time.Duration       //默认多长时间需要执行一次清除过期数据操作
+	numberOfAllowedAccesses      int                 //在计时周期内最多允许访问的次数
+	estimatedNumberOfOnlineUsers int                 //在计时周期内预计有多少个用户会访问网站，建议选用一个稍大于实际值的值，以减少内存分配次数
+	visitorRecords               []*circleQueueInt64 //用于存储用户的每一条访问记录
+	usedRecordsIndex             sync.Map            //visitorRecords中已使用的数据索引,key代表用户名或IP,value代表visitorRecords中的下标位置
+	notUsedVisitorRecordsIndex   *hashset.SetInt     //对应visitorRecords中未使用的数据的下标位置，其自身非并发安全，其并发安全由locker实现
+	locker                       *sync.Mutex         //并发安全锁
 }
 
 /*
@@ -26,53 +25,50 @@ vc := newsingleRule(time.Minute*30, 50)
 它表示:
 在30分钟内每个用户最多允许访问50次,并且我们预计在这30分钟内大致有1000个用户会访问我们的网站
 1000为可选字段，此参数可默认不填写，主要是用于提升性能，类似于声明切片时的cap,绝大部分情况下无需关注此参数。
+对于默认过期时间defaultExpiration,如果小于1秒，从效率的角度讲，整个算法实际上可以衰退为令牌桶算法golang.org/x/time/rate,以应对超高并发的情况，在此并不实现。
 */
 func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int, estimatedNumberOfOnlineUserNum ...int) *singleRule {
-	/*
-		对于默认过期时间defaultExpiration,如果小于1秒，从效率的角度讲，
-		整个算法实际上可以衰退为令牌桶算法golang.org/x/time/rate,以应
-		对超高并发的情况，在此并不实现。
-	*/
+	//规范化numberOfAllowedAccesses
+	//若参数numberOfAllowedAccesses设置是否合理，在此被强行修改为1
+	if numberOfAllowedAccesses <= 0 {
+		numberOfAllowedAccesses = 1
+	}
+
+	//规范化estimatedNumberOfOnlineUsers
+	//estimatedNumberOfOnlineUsers没填写,或者是乱填写的,就默认用numberOfAllowedAccesses
 	estimatedNumberOfOnlineUsers := 0
 	if len(estimatedNumberOfOnlineUserNum) > 0 {
 		estimatedNumberOfOnlineUsers = estimatedNumberOfOnlineUserNum[0]
 	}
-	//estimatedNumberOfOnlineUsers没填写就默认用numberOfAllowedAccesses
-	if estimatedNumberOfOnlineUsers == 0 {
+	if estimatedNumberOfOnlineUsers <= 0 {
 		estimatedNumberOfOnlineUsers = numberOfAllowedAccesses
 	}
-	//设立默认清除过期数据的间隔,用于清除过期数据,并定期清理内存
+	//规范化defaultExpiration
+	//因为整个算法是针对相对较大的时间的，如果是短时间可直接用golang.org/x/time/rate，所以，这里最短清除周期定为1秒
 	cleanupInterval := defaultExpiration / 100
-	if cleanupInterval < time.Nanosecond*1 {
-		cleanupInterval = time.Nanosecond * 1
+	if cleanupInterval < time.Second*1 {
+		cleanupInterval = time.Second * 1
 	}
 	vc := createsingleRule(defaultExpiration, cleanupInterval, numberOfAllowedAccesses, estimatedNumberOfOnlineUsers)
+	//定期清除过期数据,并定期清理内存
 	go vc.deleteExpired()
 	return vc
 }
 
 func createsingleRule(defaultExpiration, cleanupInterval time.Duration, numberOfAllowedAccesses, estimatedNumberOfOnlineUsers int) *singleRule {
-	//规范化输入参数
-	if numberOfAllowedAccesses <= 0 {
-		log.Println("请检察参数numberOfAllowedAccesses设置是否合理，在此被强行修改为1")
-		numberOfAllowedAccesses = 1
-	}
-	if estimatedNumberOfOnlineUsers <= 0 {
-		log.Println("请检察参数estimatedNumberOfOnlineUsers设置是否合理，在此被强行修改为1")
-		estimatedNumberOfOnlineUsers = 1
-	}
 	var vc singleRule
-	var lock sync.Mutex
+	var locker sync.Mutex
 	vc.defaultExpiration = defaultExpiration
 	vc.cleanupInterval = cleanupInterval
 	vc.numberOfAllowedAccesses = numberOfAllowedAccesses
 	vc.estimatedNumberOfOnlineUsers = estimatedNumberOfOnlineUsers
 	vc.notUsedVisitorRecordsIndex = hashset.NewInt()
-	vc.lock = &lock
+	vc.locker = &locker
 	//根据在线用户数量初始化用户访问记录数据
 	vc.visitorRecords = make([]*circleQueueInt64, vc.estimatedNumberOfOnlineUsers)
 	for i := range vc.visitorRecords {
 		vc.visitorRecords[i] = newCircleQueueInt64(vc.numberOfAllowedAccesses)
+		//刚刚开始时，所有数据都未使用，放入未使用索引中
 		vc.notUsedVisitorRecordsIndex.Add(i)
 	}
 	return &vc
@@ -87,7 +83,7 @@ func (this *singleRule) AllowVisit(key interface{}) bool {
 //剩余访问次数
 func (this *singleRule) RemainingVisits(key interface{}) int {
 	//先前曾经有访问记录，则取剩余空间长度。
-	if index, exist := this.indexes.Load(key); exist {
+	if index, exist := this.usedRecordsIndex.Load(key); exist {
 		this.visitorRecords[index.(int)].DeleteExpired()
 		return this.visitorRecords[index.(int)].UnUsedSize()
 	}
@@ -106,10 +102,10 @@ func (this *singleRule) RemainingVisitsIP(ip string) int {
 
 //增加一条访问记录
 func (this *singleRule) add(key interface{}) (err error) {
-	this.lock.Lock()
-	defer this.lock.Unlock()
+	this.locker.Lock()
+	defer this.locker.Unlock()
 	//存在某访客，则在该访客记录中增加一条访问记录
-	if index, exist := this.indexes.Load(key); exist {
+	if index, exist := this.usedRecordsIndex.Load(key); exist {
 		this.visitorRecords[index.(int)].DeleteExpired()
 		return this.visitorRecords[index.(int)].Push(time.Now().Add(this.defaultExpiration).UnixNano())
 	}
@@ -118,7 +114,7 @@ func (this *singleRule) add(key interface{}) (err error) {
 	if this.notUsedVisitorRecordsIndex.Size() > 0 {
 		for index := range this.notUsedVisitorRecordsIndex.Items {
 			this.notUsedVisitorRecordsIndex.Remove(index)
-			this.indexes.Store(key, index)
+			this.usedRecordsIndex.Store(key, index)
 			return this.visitorRecords[index].Push(time.Now().Add(this.defaultExpiration).UnixNano())
 		}
 	}
@@ -126,7 +122,7 @@ func (this *singleRule) add(key interface{}) (err error) {
 	queue := newCircleQueueInt64(this.numberOfAllowedAccesses)
 	this.visitorRecords = append(this.visitorRecords, queue)
 	index := len(this.visitorRecords) - 1 //最后一条的位置即为新的索引位置
-	this.indexes.Store(key, index)
+	this.usedRecordsIndex.Store(key, index)
 	return this.visitorRecords[index].Push(time.Now().Add(this.defaultExpiration).UnixNano())
 }
 
@@ -146,8 +142,9 @@ func (this *singleRule) deleteExpired() {
 
 //在特定时间间隔内执行一次删除过期数据操作
 func (this *singleRule) deleteExpiredOnce() {
-	this.indexes.Range(func(k, v interface{}) bool {
-		this.lock.Lock() //range里面不能用defer
+	this.usedRecordsIndex.Range(func(k, v interface{}) bool {
+		//range里面不能用defer
+		this.locker.Lock()
 		index := v.(int)
 		//防止越界出错，理论上不存在这种情况
 		if index < len(this.visitorRecords) && index >= 0 {
@@ -155,13 +152,13 @@ func (this *singleRule) deleteExpiredOnce() {
 			//删除完过期数据之后，如果该用户的所有访问记录均过期了，那么就删除该用户
 			//并把该空间返还给notUsedVisitorRecordsIndex以便下次重复使用
 			if this.visitorRecords[index].UsedSize() == 0 {
-				this.indexes.Delete(k)
+				this.usedRecordsIndex.Delete(k)
 				this.notUsedVisitorRecordsIndex.Add(index)
 			}
 		} else {
-			this.indexes.Delete(k)
+			this.usedRecordsIndex.Delete(k)
 		}
-		this.lock.Unlock()
+		this.locker.Unlock()
 		return true
 	})
 }
@@ -172,8 +169,8 @@ GC的目的在于，防止出现访问峰值之后，实际的访问峰值远大
 之后用户数又大幅下降，这时候，为了减少内存占用，需要进行数据回收操作，重新分配空间。
 */
 func (this *singleRule) gc() {
-	this.lock.Lock()
-	defer this.lock.Unlock()
+	this.locker.Lock()
+	defer this.locker.Unlock()
 	if this.needGc() {
 		curLen := len(this.visitorRecords)
 		unUsedLen := len(this.notUsedVisitorRecordsIndex.Items)
@@ -192,9 +189,9 @@ func (this *singleRule) gc() {
 		}
 		//清空未使用索引notUsedVisitorRecordsIndex
 		this.notUsedVisitorRecordsIndex.Clear()
-		//重建索引indexes
+		//重建索引usedRecordsIndex
 		indexNew := 0
-		this.indexes.Range(func(k, v interface{}) bool {
+		this.usedRecordsIndex.Range(func(k, v interface{}) bool {
 			indexOld := v.(int)
 			visitorRecordsNew[indexNew] = this.visitorRecords[indexOld]
 			indexNew++
@@ -214,6 +211,7 @@ func (this *singleRule) gc() {
 是否需要进行数据清理
 如果visitorRecords数据空的太多,则需要进行清理操作
 并且长度远大于默认在线用户数量，则需要进行GC操作
+这里无需加锁，上层函数已经加锁
 */
 func (this *singleRule) needGc() bool {
 	curLen := len(this.visitorRecords)

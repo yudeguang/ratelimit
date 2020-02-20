@@ -77,13 +77,12 @@ func (this *circleQueueInt64) DeleteExpired() {
 	if size == 0 {
 		return
 	}
-	temphead := this.head
+	//依次删除过期数据
 	for i := 0; i < size; i++ {
-		if now > this.slice[temphead] {
+		if now > this.slice[this.head] {
 			this.Pop()
 		} else {
 			return
 		}
-		temphead = (temphead + 1) % this.maxSize
 	}
 }
