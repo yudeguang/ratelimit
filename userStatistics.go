@@ -1,3 +1,8 @@
+// Copyright 2020 ratelimit Author(https://github.com/yudeguang/ratelimit). All Rights Reserved.
+//
+// This Source Code Form is subject to the terms of the MIT License.
+// If a copy of the MIT was not distributed with this file,
+// You can obtain one at https://github.com/yudeguang/ratelimit.
 package ratelimit
 
 import (
@@ -13,7 +18,7 @@ RemainingVisits("username")
 func (this *Rule) RemainingVisits(key interface{}) []int {
 	arr := make([]int, 0, len(this.rules))
 	for i := range this.rules {
-		arr = append(arr, this.rules[i].RemainingVisits(key))
+		arr = append(arr, this.rules[i].remainingVisits(key))
 	}
 	return arr
 }

@@ -1,3 +1,8 @@
+// Copyright 2020 ratelimit Author(https://github.com/yudeguang/ratelimit). All Rights Reserved.
+//
+// This Source Code Form is subject to the terms of the MIT License.
+// If a copy of the MIT was not distributed with this file,
+// You can obtain one at https://github.com/yudeguang/ratelimit.
 package ratelimit
 
 import (
@@ -76,12 +81,12 @@ func createsingleRule(defaultExpiration, cleanupInterval time.Duration, numberOf
 }
 
 //是否允许访问,允许访问则往访问记录中加入一条访问记录
-func (this *singleRule) AllowVisit(key interface{}) bool {
+func (this *singleRule) allowVisit(key interface{}) bool {
 	return this.add(key) == nil
 }
 
 //剩余访问次数
-func (this *singleRule) RemainingVisits(key interface{}) int {
+func (this *singleRule) remainingVisits(key interface{}) int {
 	//先前曾经有访问记录，则取剩余空间长度。
 	if index, exist := this.usedRecordsIndex.Load(key); exist {
 		this.visitorRecords[index.(int)].DeleteExpired()
@@ -92,12 +97,12 @@ func (this *singleRule) RemainingVisits(key interface{}) int {
 }
 
 //某IP剩余访问次数
-func (this *singleRule) RemainingVisitsIP(ip string) int {
+func (this *singleRule) remainingVisitsIP(ip string) int {
 	ipInt64 := ip4StringToInt64(ip)
 	if ipInt64 == 0 {
 		return 0
 	}
-	return this.RemainingVisits(ipInt64)
+	return this.remainingVisits(ipInt64)
 }
 
 //增加一条访问记录

@@ -1,3 +1,8 @@
+// Copyright 2020 ratelimit Author(https://github.com/yudeguang/ratelimit). All Rights Reserved.
+//
+// This Source Code Form is subject to the terms of the MIT License.
+// If a copy of the MIT was not distributed with this file,
+// You can obtain one at https://github.com/yudeguang/ratelimit.
 package ratelimit
 
 import (
@@ -46,18 +51,22 @@ func (this *Rule) AddRule(defaultExpiration time.Duration, numberOfAllowedAccess
 }
 
 /*
-某用户是否允许访问,若允许访问,则会分别往该规则的各细分访问记录中各自动增加一条访问记录，例:
+是否还允许某用户访问，如果访问量过多，超出各细分规则中任何一条规则规定的访问量，则不允许访问
+无论是否允许访问都会尝试在各细分访问规则记录中增加一条访问日志记录，函数AllowVisit也可以认为
+是AddRecords
+例:
 AllowVisit("username")
 */
-func (this *Rule) AllowVisit(user interface{}) bool {
+func (this *Rule) AllowVisit(key interface{}) bool {
 	if len(this.rules) == 0 {
 		panic("访问规则暂时为空，请调用AddRule为其增加访问规则")
 	}
 	//这个地方需要注意，如果前面的某些策略通过，但是后面的策略不通过。这时候，在前面允许访问的策略中，
-	//允许访问次数同样是会减少的,我们这里并没有严格的做回滚操作。原因在于，一方面是性能，另外一方面是随着
+	//允许访问次数是会减少的,我们这里并没有严格的做回滚操作。
+	//原因在于一方面是性能，另外一方面是随着
 	//时间流逝，前面的策略中允许访问的次数很快就会自动增长。
 	for i := range this.rules {
-		if err := this.rules[i].add(user); err != nil {
+		if !this.rules[i].allowVisit(key) {
 			return false
 		}
 	}
