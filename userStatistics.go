@@ -38,9 +38,9 @@ func (this *Rule) PrintRemainingVisits(key interface{}, language ...int) {
 	}
 	for i := range this.rules {
 		if lan == 0 {
-			fmt.Println("在", this.rules[i].defaultExpiration, "以内允许访问", this.rules[i].numberOfAllowedAccesses, "次,剩余", this.rules[i].remainingVisits(key))
+			fmt.Println(key, "在", this.rules[i].defaultExpiration, "内共允许访问", this.rules[i].numberOfAllowedAccesses, "次,剩余", this.rules[i].remainingVisits(key))
 		} else {
-			fmt.Println("allow", this.rules[i].numberOfAllowedAccesses, "visits in", this.rules[i].defaultExpiration, ". the remaining visits are:", this.rules[i].remainingVisits(key))
+			fmt.Println(key, "allowed", this.rules[i].numberOfAllowedAccesses, "visits within", this.rules[i].defaultExpiration, ",with", this.rules[i].remainingVisits(key), "remaining")
 		}
 	}
 }
