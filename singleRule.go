@@ -6,7 +6,6 @@
 package ratelimit
 
 import (
-	"github.com/yudeguang/hashset"
 	"sync"
 	"time"
 )
@@ -19,7 +18,7 @@ type singleRule struct {
 	estimatedNumberOfOnlineUsers int                 //在计时周期内预计有多少个用户会访问网站，建议选用一个稍大于实际值的值，以减少内存分配次数
 	visitorRecords               []*circleQueueInt64 //用于存储用户的每一条访问记录
 	usedRecordsIndex             sync.Map            //visitorRecords中已使用的数据索引,key代表用户名或IP,value代表visitorRecords中的下标位置
-	notUsedVisitorRecordsIndex   *hashset.SetInt     //对应visitorRecords中未使用的数据的下标位置，其自身非并发安全，其并发安全由locker实现
+	notUsedVisitorRecordsIndex   map[int]struct{}    //对应visitorRecords中未使用的数据的下标位置，其自身非并发安全，其并发安全由locker实现
 	locker                       *sync.Mutex         //并发安全锁
 }
 
@@ -67,14 +66,14 @@ func createsingleRule(defaultExpiration, cleanupInterval time.Duration, numberOf
 	vc.cleanupInterval = cleanupInterval
 	vc.numberOfAllowedAccesses = numberOfAllowedAccesses
 	vc.estimatedNumberOfOnlineUsers = estimatedNumberOfOnlineUsers
-	vc.notUsedVisitorRecordsIndex = hashset.NewInt()
+	vc.notUsedVisitorRecordsIndex = make(map[int]struct{})
 	vc.locker = &locker
 	//根据在线用户数量初始化用户访问记录数据
 	vc.visitorRecords = make([]*circleQueueInt64, vc.estimatedNumberOfOnlineUsers)
 	for i := range vc.visitorRecords {
 		vc.visitorRecords[i] = newCircleQueueInt64(vc.numberOfAllowedAccesses)
 		//刚刚开始时，所有数据都未使用，放入未使用索引中
-		vc.notUsedVisitorRecordsIndex.Add(i)
+		vc.notUsedVisitorRecordsIndex[i] = struct{}{}
 	}
 	return &vc
 
@@ -116,9 +115,9 @@ func (this *singleRule) add(key interface{}) (err error) {
 	}
 	//该访客在这一段时间从来未出现过
 	//在visitorRecords中有未使用的空间时,根据notUsedVisitorRecordsIndex随机取一条出来使用
-	if this.notUsedVisitorRecordsIndex.Size() > 0 {
-		for index := range this.notUsedVisitorRecordsIndex.Items {
-			this.notUsedVisitorRecordsIndex.Remove(index)
+	if len(this.notUsedVisitorRecordsIndex) > 0 {
+		for index := range this.notUsedVisitorRecordsIndex {
+			delete(this.notUsedVisitorRecordsIndex, index) //this.notUsedVisitorRecordsIndex.Remove(index)
 			this.usedRecordsIndex.Store(key, index)
 			return this.visitorRecords[index].Push(time.Now().Add(this.defaultExpiration).UnixNano())
 		}
@@ -158,7 +157,7 @@ func (this *singleRule) deleteExpiredOnce() {
 			//并把该空间返还给notUsedVisitorRecordsIndex以便下次重复使用
 			if this.visitorRecords[index].UsedSize() == 0 {
 				this.usedRecordsIndex.Delete(k)
-				this.notUsedVisitorRecordsIndex.Add(index)
+				this.notUsedVisitorRecordsIndex[index] = struct{}{}
 			}
 		} else {
 			this.usedRecordsIndex.Delete(k)
@@ -178,7 +177,7 @@ func (this *singleRule) gc() {
 	defer this.locker.Unlock()
 	if this.needGc() {
 		curLen := len(this.visitorRecords)
-		unUsedLen := len(this.notUsedVisitorRecordsIndex.Items)
+		unUsedLen := len(this.notUsedVisitorRecordsIndex)
 		usedLen := curLen - unUsedLen
 		//算出新的visitorRecords长度
 		var newLen int
@@ -193,7 +192,7 @@ func (this *singleRule) gc() {
 			visitorRecordsNew[i] = newCircleQueueInt64(this.numberOfAllowedAccesses)
 		}
 		//清空未使用索引notUsedVisitorRecordsIndex
-		this.notUsedVisitorRecordsIndex.Clear()
+		this.notUsedVisitorRecordsIndex = make(map[int]struct{})
 		//重建索引usedRecordsIndex
 		indexNew := 0
 		this.usedRecordsIndex.Range(func(k, v interface{}) bool {
@@ -204,9 +203,9 @@ func (this *singleRule) gc() {
 		})
 		this.visitorRecords = visitorRecordsNew
 		//重建未使用索引notUsedVisitorRecordsIndex
-		for i := range this.visitorRecords {
-			if i >= indexNew {
-				this.notUsedVisitorRecordsIndex.Add(i)
+		for index := range this.visitorRecords {
+			if index >= indexNew {
+				this.notUsedVisitorRecordsIndex[index] = struct{}{}
 			}
 		}
 	}
@@ -220,7 +219,7 @@ func (this *singleRule) gc() {
 */
 func (this *singleRule) needGc() bool {
 	curLen := len(this.visitorRecords)
-	unUsedLen := len(this.notUsedVisitorRecordsIndex.Items)
+	unUsedLen := len(this.notUsedVisitorRecordsIndex)
 	usedLen := curLen - unUsedLen
 	//log.Println("总:", curLen, "已用:", usedLen, "未使用:", unUsedLen)
 	//比预期的少，我们就不回收了

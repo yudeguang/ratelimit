@@ -7,8 +7,12 @@ package ratelimit
 
 import (
 	"fmt"
-	"github.com/yudeguang/slice"
 	"sort"
+)
+
+const (
+	Chinese = iota
+	English
 )
 
 /*
@@ -24,6 +28,24 @@ func (this *Rule) RemainingVisits(key interface{}) []int {
 }
 
 /*
+打印各细分规则下的剩余访问次数
+*/
+func (this *Rule) PrintRemainingVisits(key interface{}, language ...int) {
+	//先确定语言，默认为中文，目前只支持中文，英文两种语言
+	lan := 0
+	if len(language) == 1 && language[0] == 1 {
+		lan = 1
+	}
+	for i := range this.rules {
+		if lan == 0 {
+			fmt.Println("在", this.rules[i].defaultExpiration, "以内允许访问", this.rules[i].numberOfAllowedAccesses, "次,剩余", this.rules[i].remainingVisits(key))
+		} else {
+			fmt.Println("allow", this.rules[i].numberOfAllowedAccesses, "visits in", this.rules[i].defaultExpiration, ". the remaining visits are:", this.rules[i].remainingVisits(key))
+		}
+	}
+}
+
+/*
 以IP作为用户名，此用户剩余访问次数,例:
 RemainingVisitsByIP4("127.0.0.1")
 */
@@ -36,7 +58,18 @@ func (this *Rule) RemainingVisitsByIP4(ip string) []int {
 }
 
 //获得当前所有的在线用户,注意所有用int64存储的用户会被默认认为是IP地址，会被自动转换为IP的字符串形式输出以方便查看
+//如果不是本身就是以int64形式存储，而不是IP4，那么可以用ip4StringToInt64自己再转换回去
 func (this *Rule) GetCurOnlineUsers() []string {
+	//向切片Sli中插入没出现过的元素V，如果切片中有V，则不插入
+	var insertIgnoreString = func(s []string, v string) []string {
+		for _, val := range s {
+			if val == v {
+				return s
+			}
+		}
+		s = append(s, v)
+		return s
+	}
 	var users []string
 	for i := range this.rules {
 		f := func(k, v interface{}) bool {
@@ -47,7 +80,7 @@ func (this *Rule) GetCurOnlineUsers() []string {
 			default:
 				user = fmt.Sprint(k)
 			}
-			users = slice.InsertIgnoreString(users, user)
+			users = insertIgnoreString(users, user)
 			return true
 		}
 		this.rules[i].usedRecordsIndex.Range(f)
