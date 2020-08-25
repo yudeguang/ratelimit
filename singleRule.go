@@ -53,6 +53,9 @@ func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int,
 	if cleanupInterval < time.Second*1 {
 		cleanupInterval = time.Second * 1
 	}
+	if cleanupInterval > time.Second*60 {
+		cleanupInterval = time.Second * 60
+	}
 	vc := createsingleRule(defaultExpiration, cleanupInterval, numberOfAllowedAccesses, estimatedNumberOfOnlineUsers)
 	//定期清除过期数据,并定期清理内存
 	go vc.deleteExpired()
