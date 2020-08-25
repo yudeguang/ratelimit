@@ -50,6 +50,7 @@ func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int,
 	//规范化defaultExpiration
 	//因为整个算法是针对相对较大的时间的，如果是短时间可直接用golang.org/x/time/rate，所以，这里最短清除周期定为1秒
 	cleanupInterval := defaultExpiration / 100
+	//强行修正清除过期数据的最长时间间隔与最短时间间隔
 	if cleanupInterval < time.Second*1 {
 		cleanupInterval = time.Second * 1
 	}
