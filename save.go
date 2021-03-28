@@ -19,7 +19,7 @@ import (
 )
 
 //如果有历史备份文件，则加载，并且开启自动保存，默认60秒完成一次存盘
-func (this *Rule) LoadingAndAutoSaveToDisc(backupFileName string, backUpInterval ...time.Duration) {
+func (this *Rule) LoadingAndAutoSaveToDisc(backupFileName string, backUpInterval ...time.Duration) (err error) {
 	if len(this.rules) == 0 {
 		panic("rule is empty，please add rule by AddRule")
 	}
@@ -34,7 +34,7 @@ func (this *Rule) LoadingAndAutoSaveToDisc(backupFileName string, backUpInterval
 	if this.backupFileName == "" {
 		panic("backupFileName err:" + backupFileName)
 	}
-	this.loading()
+	err = this.loading()
 	go func() {
 		finished := true
 		for range time.Tick(this.backUpInterval) {
@@ -47,6 +47,7 @@ func (this *Rule) LoadingAndAutoSaveToDisc(backupFileName string, backUpInterval
 		}
 
 	}()
+	return err
 }
 
 //把数据保存到硬盘上,仅支持key为string,int,int64等类型数据的缓存
