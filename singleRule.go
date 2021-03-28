@@ -108,14 +108,19 @@ func (this *singleRule) remainingVisitsIP(ip string) int {
 	return this.remainingVisits(ipInt64)
 }
 
-//增加一条访问记录
-func (this *singleRule) add(key interface{}) (err error) {
+//增加一条访问记录,两种增加方法，一种是从备份文件中增加
+func (this *singleRule) add(key interface{}, reordFromBackUpFile ...int64) (err error) {
 	this.locker.Lock()
 	defer this.locker.Unlock()
 	//存在某访客，则在该访客记录中增加一条访问记录
 	if index, exist := this.usedRecordsIndex.Load(key); exist {
 		this.visitorRecords[index.(int)].DeleteExpired()
-		return this.visitorRecords[index.(int)].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+		if len(reordFromBackUpFile) > 0 {
+			return this.visitorRecords[index.(int)].Push(reordFromBackUpFile[0])
+		} else {
+			return this.visitorRecords[index.(int)].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+		}
+
 	}
 	//该访客在这一段时间从来未出现过
 	//在visitorRecords中有未使用的空间时,根据notUsedVisitorRecordsIndex随机取一条出来使用
@@ -123,7 +128,11 @@ func (this *singleRule) add(key interface{}) (err error) {
 		for index := range this.notUsedVisitorRecordsIndex {
 			delete(this.notUsedVisitorRecordsIndex, index) //this.notUsedVisitorRecordsIndex.Remove(index)
 			this.usedRecordsIndex.Store(key, index)
-			return this.visitorRecords[index].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+			if len(reordFromBackUpFile) > 0 {
+				return this.visitorRecords[index].Push(reordFromBackUpFile[0])
+			} else {
+				return this.visitorRecords[index].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+			}
 		}
 	}
 	//visitorRecords没有空余空间时，则需要插入一条新数据到visitorRecords中
@@ -131,7 +140,11 @@ func (this *singleRule) add(key interface{}) (err error) {
 	this.visitorRecords = append(this.visitorRecords, queue)
 	index := len(this.visitorRecords) - 1 //最后一条的位置即为新的索引位置
 	this.usedRecordsIndex.Store(key, index)
-	return this.visitorRecords[index].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+	if len(reordFromBackUpFile) > 0 {
+		return this.visitorRecords[index].Push(reordFromBackUpFile[0])
+	} else {
+		return this.visitorRecords[index].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+	}
 }
 
 //删除过期数据

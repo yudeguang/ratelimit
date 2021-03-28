@@ -7,12 +7,19 @@ package ratelimit
 
 import (
 	"sort"
+	"strings"
+	"sync"
 	"time"
 )
 
 //用户访问控制策略,可由一个或多个访问控制规则组成
 type Rule struct {
-	rules []*singleRule
+	rules          []*singleRule
+	needBackup     bool          //是否需要把数据备份到硬盘，开启备份之后，不允许再临时增加规则singleRule
+	backupFileName string        //缓存存到硬盘上的文件名
+	backUpInterval time.Duration //默认多长时间需要执行一次数据备份操作
+	locker         sync.Mutex    //用于数据备份
+
 }
 
 /*
@@ -20,8 +27,16 @@ type Rule struct {
 r := NewRule()
 初始化之后，紧跟着需要调用AddRule方法增加一条或若干条用户访问控制策略，增加用户访问控制策略后，才可以正式使用
 */
-func NewRule() *Rule {
-	return new(Rule)
+func NewRule(backupFileNames ...string) *Rule {
+	backUpInterval := time.Second * 60 //默认60秒写一次硬盘
+	backupFileName := ""
+	if len(backupFileName) > 0 {
+		backupFileName = strings.Split(backupFileNames[0], ".")[0]
+	}
+	r := new(Rule)
+	r.backupFileName = backupFileName
+	r.backUpInterval = backUpInterval
+	return r
 }
 
 /*
@@ -43,6 +58,10 @@ estimatedNumberOfOnlineUserNum 表示预计可能有多少人访问,此参数为
 以上任何一条用户访问控制策略没通过,都不允许访问
 */
 func (this *Rule) AddRule(defaultExpiration time.Duration, numberOfAllowedAccesses int, estimatedNumberOfOnlineUserNum ...int) {
+	//开启备份之后，不下允许添加规则
+	if this.needBackup {
+		panic("cant't use AddRule after AutoSave")
+	}
 	this.rules = append(this.rules, newsingleRule(defaultExpiration, numberOfAllowedAccesses, estimatedNumberOfOnlineUserNum...))
 	//把时间控制调整为从小到大排列，防止用户在实例化的时候，未按照预期的时间顺序添加，导致某些规则失效
 	sort.Slice(this.rules, func(i int, j int) bool {
@@ -59,7 +78,7 @@ AllowVisit("username")
 */
 func (this *Rule) AllowVisit(key interface{}) bool {
 	if len(this.rules) == 0 {
-		panic("访问规则暂时为空，请调用AddRule为其增加访问规则")
+		panic("rule is empty，please add rule by AddRule")
 	}
 	//这个地方需要注意，如果前面的某些策略通过，但是后面的策略不通过。这时候，在前面允许访问的策略中，
 	//允许访问次数是会减少的,我们这里并没有严格的做回滚操作。

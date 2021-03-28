@@ -16,10 +16,12 @@ import (
 
 //使用切片实现的队列
 type circleQueueInt64 struct {
-	maxSize int     //比实际队列长度大1
-	slice   []int64 //切片会被实际队列长度大1
-	head    int     //头
-	tail    int     //尾
+	maxSize     int     //比实际队列长度大1
+	slice       []int64 //切片会被实际队列长度大1
+	head        int     //头
+	tail        int     //尾
+	headForCopy int     //临时，用于数据复制
+	tailForCopy int     //临时，用于数据复制
 }
 
 //初始化环形队列
@@ -50,6 +52,16 @@ func (this *circleQueueInt64) Pop() (val int64, err error) {
 	return
 }
 
+//出对列
+func (this *circleQueueInt64) PopForCopy() (val int64, err error) {
+	if this.IsEmptyForCopy() {
+		return 0, errors.New("queue is empty")
+	}
+	val = this.slice[this.headForCopy]
+	this.headForCopy = (this.headForCopy + 1) % this.maxSize
+	return
+}
+
 //判断队列是否已满
 func (this *circleQueueInt64) IsFull() bool {
 	return (this.tail+1)%this.maxSize == this.head
@@ -58,6 +70,16 @@ func (this *circleQueueInt64) IsFull() bool {
 //判断队列是否为空
 func (this *circleQueueInt64) IsEmpty() bool {
 	return this.tail == this.head
+}
+
+//判断队列是否为空
+func (this *circleQueueInt64) IsEmptyForCopy() bool {
+	return this.tailForCopy == this.headForCopy
+}
+
+//判断已使用多少个元素
+func (this *circleQueueInt64) UsedSizeForCopy() int {
+	return (this.tailForCopy + this.maxSize - this.headForCopy) % this.maxSize
 }
 
 //判断已使用多少个元素
