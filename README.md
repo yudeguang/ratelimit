@@ -23,6 +23,8 @@ func main() {
 	r.AddRule(time.Second*10, 5)
 	r.AddRule(time.Minute*30, 50)
 	r.AddRule(time.Hour*24, 500)
+	//默认10秒备份一次，备份到程序当前文件夹下，文件名为test.ratelimit
+	r.LoadingAndAutoSaveToDisc("test", time.Second*10)
 	//构建若干个用户，模拟用户访问
 	users := []string{"andy", "小余", "130x"}
 	for _, user := range users {
