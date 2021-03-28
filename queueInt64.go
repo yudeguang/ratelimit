@@ -7,6 +7,7 @@ package ratelimit
 
 import (
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -16,12 +17,14 @@ import (
 
 //使用切片实现的队列
 type circleQueueInt64 struct {
+	key         interface{}
 	maxSize     int     //比实际队列长度大1
 	slice       []int64 //切片会被实际队列长度大1
 	head        int     //头
 	tail        int     //尾
 	headForCopy int     //临时，用于数据复制
 	tailForCopy int     //临时，用于数据复制
+	locker      *sync.Mutex
 }
 
 //初始化环形队列
@@ -29,11 +32,14 @@ func newCircleQueueInt64(size int) *circleQueueInt64 {
 	var c circleQueueInt64
 	c.maxSize = size + 1
 	c.slice = make([]int64, c.maxSize)
+	c.locker = new(sync.Mutex)
 	return &c
 }
 
 //入对列
 func (this *circleQueueInt64) Push(val int64) (err error) {
+	this.locker.Lock()
+	defer this.locker.Unlock()
 	if this.IsFull() {
 		return errors.New("queue is full")
 	}
@@ -44,6 +50,8 @@ func (this *circleQueueInt64) Push(val int64) (err error) {
 
 //出对列
 func (this *circleQueueInt64) Pop() (val int64, err error) {
+	this.locker.Lock()
+	defer this.locker.Unlock()
 	if this.IsEmpty() {
 		return 0, errors.New("queue is empty")
 	}
@@ -54,6 +62,8 @@ func (this *circleQueueInt64) Pop() (val int64, err error) {
 
 //出对列
 func (this *circleQueueInt64) PopForCopy() (val int64, err error) {
+	this.locker.Lock()
+	defer this.locker.Unlock()
 	if this.IsEmptyForCopy() {
 		return 0, errors.New("queue is empty")
 	}
@@ -98,7 +108,10 @@ func (this *circleQueueInt64) Len() int {
 }
 
 //删除过期数据
-func (this *circleQueueInt64) DeleteExpired() {
+func (this *circleQueueInt64) DeleteExpired(key interface{}) {
+	if this.key != key {
+		return
+	}
 	now := time.Now().UnixNano()
 	size := this.UsedSize()
 	if size == 0 {

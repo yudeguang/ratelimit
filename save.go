@@ -51,16 +51,20 @@ func (this *Rule) LoadingAndAutoSaveToDisc(backupFileName string, backUpInterval
 }
 
 //把数据保存到硬盘上,仅支持key为string,int,int64等类型数据的缓存
-func (this *Rule) SaveToDiscOnce() (err error) {
+func (this *Rule) SaveToDiscOnce(backupFileNames ...string) (err error) {
+	this.locker.Lock()
+	defer this.locker.Unlock()
 	if len(this.rules) == 0 {
 		panic("rule is empty，please add rule by AddRule")
 	}
-	this.locker.Lock()
-	defer this.locker.Unlock()
-	if this.backupFileName == "" {
+	backupFileName := this.backupFileName
+	if len(backupFileNames) > 0 {
+		backupFileName = strings.Split(backupFileNames[0], ".")[0]
+	}
+	if backupFileName == "" {
 		return fmt.Errorf("back up file not exist")
 	}
-	f, err := os.Create(this.backupFileName + ".ratelimit_temp")
+	f, err := os.Create(backupFileName + ".ratelimit_temp")
 	if err != nil {
 		return err
 	}
@@ -75,62 +79,65 @@ func (this *Rule) SaveToDiscOnce() (err error) {
 		curRuleData := new(bytes.Buffer)
 		tempBuf := bufio.NewWriterSize(curRuleData, 40960)
 		num := 0
-		this.rules[i].usedRecordsIndex.Range(func(k, v interface{}) bool {
-
-			switch k.(type) {
-			case string:
-				//与其它类型不同，KEY长度是不定长的
-				tempBuf.Write([]byte{0x00})
-				tempBuf.Write(uint64ToByte(uint64(len(k.(string)))))
-				tempBuf.WriteString(k.(string))
-			case int:
-				tempBuf.Write([]byte{0x01})
-				tempBuf.Write(uint64ToByte(uint64(k.(int))))
-			case int8:
-				tempBuf.Write([]byte{0x02})
-				tempBuf.Write(uint64ToByte(uint64(k.(int8))))
-			case int16:
-				tempBuf.Write([]byte{0x03})
-				tempBuf.Write(uint64ToByte(uint64(k.(int16))))
-			case int32:
-				tempBuf.Write([]byte{0x04})
-				tempBuf.Write(uint64ToByte(uint64(k.(int32))))
-			case int64:
-				tempBuf.Write([]byte{0x05})
-				tempBuf.Write(uint64ToByte(uint64(k.(int64))))
-			case uint:
-				tempBuf.Write([]byte{0x06})
-				tempBuf.Write(uint64ToByte(uint64(k.(uint))))
-			case uint8:
-				tempBuf.Write([]byte{0x07})
-				tempBuf.Write(uint64ToByte(uint64(k.(uint8))))
-			case uint16:
-				tempBuf.Write([]byte{0x08})
-				tempBuf.Write(uint64ToByte(uint64(k.(uint16))))
-			case uint32:
-				tempBuf.Write([]byte{0x09})
-				tempBuf.Write(uint64ToByte(uint64(k.(uint32))))
-			case uint64:
-				tempBuf.Write([]byte{0x0A})
-				tempBuf.Write(uint64ToByte(k.(uint64)))
-			default:
-				panic("key type can only be string,int,int8,int16,int32,int64,uint,uint8,uint16,uint32,uint64")
-			}
-			index := v.(int)
-			this.rules[i].visitorRecords[index].tailForCopy = this.rules[i].visitorRecords[index].tail
-			this.rules[i].visitorRecords[index].headForCopy = this.rules[i].visitorRecords[index].head
-			size := this.rules[i].visitorRecords[index].UsedSizeForCopy()
-
-			//无数据可以不写
-			if size > 0 {
-				//单个KEY对应的访问记录数
-				tempBuf.Write(uint64ToByte(uint64(size)))
-				for ii := 0; ii < size; ii++ {
-					val, _ := this.rules[i].visitorRecords[index].PopForCopy()
-					tempBuf.Write(uint64ToByte(uint64(val)))
+		this.rules[i].usedRecordsIndex.Range(func(key, Index interface{}) bool {
+			index := Index.(int)
+			//有效的才能加进去
+			if len(this.rules[i].visitorRecords) > index && this.rules[i].visitorRecords[index].key == key {
+				switch key.(type) {
+				case string:
+					//与其它类型不同，KEY长度是不定长的
+					tempBuf.Write([]byte{0x00})
+					tempBuf.Write(uint64ToByte(uint64(len(key.(string)))))
+					tempBuf.WriteString(key.(string))
+				case int:
+					tempBuf.Write([]byte{0x01})
+					tempBuf.Write(uint64ToByte(uint64(key.(int))))
+				case int8:
+					tempBuf.Write([]byte{0x02})
+					tempBuf.Write(uint64ToByte(uint64(key.(int8))))
+				case int16:
+					tempBuf.Write([]byte{0x03})
+					tempBuf.Write(uint64ToByte(uint64(key.(int16))))
+				case int32:
+					tempBuf.Write([]byte{0x04})
+					tempBuf.Write(uint64ToByte(uint64(key.(int32))))
+				case int64:
+					tempBuf.Write([]byte{0x05})
+					tempBuf.Write(uint64ToByte(uint64(key.(int64))))
+				case uint:
+					tempBuf.Write([]byte{0x06})
+					tempBuf.Write(uint64ToByte(uint64(key.(uint))))
+				case uint8:
+					tempBuf.Write([]byte{0x07})
+					tempBuf.Write(uint64ToByte(uint64(key.(uint8))))
+				case uint16:
+					tempBuf.Write([]byte{0x08})
+					tempBuf.Write(uint64ToByte(uint64(key.(uint16))))
+				case uint32:
+					tempBuf.Write([]byte{0x09})
+					tempBuf.Write(uint64ToByte(uint64(key.(uint32))))
+				case uint64:
+					tempBuf.Write([]byte{0x0A})
+					tempBuf.Write(uint64ToByte(key.(uint64)))
+				default:
+					panic("key type can only be string,int,int8,int16,int32,int64,uint,uint8,uint16,uint32,uint64")
 				}
+
+				this.rules[i].visitorRecords[index].tailForCopy = this.rules[i].visitorRecords[index].tail
+				this.rules[i].visitorRecords[index].headForCopy = this.rules[i].visitorRecords[index].head
+				size := this.rules[i].visitorRecords[index].UsedSizeForCopy()
+
+				//无数据可以不写
+				if size > 0 {
+					//单个KEY对应的访问记录数
+					tempBuf.Write(uint64ToByte(uint64(size)))
+					for ii := 0; ii < size; ii++ {
+						val, _ := this.rules[i].visitorRecords[index].PopForCopy()
+						tempBuf.Write(uint64ToByte(uint64(val)))
+					}
+				}
+				num++
 			}
-			num++
 			return true
 		})
 		buf.Write(uint64ToByte(uint64(i)))   //先写当前下标
@@ -148,7 +155,7 @@ func (this *Rule) SaveToDiscOnce() (err error) {
 		return
 	}
 	//成功生成临时文件后，成替换正式文件
-	_, err = copy(this.backupFileName+".ratelimit", this.backupFileName+".ratelimit_temp")
+	_, err = copy(backupFileName+".ratelimit", backupFileName+".ratelimit_temp")
 	return
 }
 func uint64ToByte(i uint64) []byte {

@@ -18,7 +18,7 @@ type singleRule struct {
 	estimatedNumberOfOnlineUsers int                 //在计时周期内预计有多少个用户会访问网站，建议选用一个稍大于实际值的值，以减少内存分配次数
 	visitorRecords               []*circleQueueInt64 //用于存储用户的每一条访问记录
 	usedRecordsIndex             sync.Map            //visitorRecords中已使用的数据索引,key代表用户名或IP,value代表visitorRecords中的下标位置
-	notUsedVisitorRecordsIndex   map[int]struct{}    //对应visitorRecords中未使用的数据的下标位置，其自身非并发安全，其并发安全由locker实现
+	notUsedVisitorRecordsIndex   map[int]struct{}    //对应visitorRecords中未使用的数据的下标位置，其自身非并发安全，其并发安全由locker实现,因sync.Map计算长度不优
 	locker                       *sync.Mutex         //并发安全锁
 }
 
@@ -65,13 +65,12 @@ func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int,
 
 func createsingleRule(defaultExpiration, cleanupInterval time.Duration, numberOfAllowedAccesses, estimatedNumberOfOnlineUsers int) *singleRule {
 	var vc singleRule
-	var locker sync.Mutex
 	vc.defaultExpiration = defaultExpiration
 	vc.cleanupInterval = cleanupInterval
 	vc.numberOfAllowedAccesses = numberOfAllowedAccesses
 	vc.estimatedNumberOfOnlineUsers = estimatedNumberOfOnlineUsers
 	vc.notUsedVisitorRecordsIndex = make(map[int]struct{})
-	vc.locker = &locker
+	vc.locker = new(sync.Mutex)
 	//根据在线用户数量初始化用户访问记录数据
 	vc.visitorRecords = make([]*circleQueueInt64, vc.estimatedNumberOfOnlineUsers)
 	for i := range vc.visitorRecords {
@@ -92,7 +91,7 @@ func (this *singleRule) allowVisit(key interface{}) bool {
 func (this *singleRule) remainingVisits(key interface{}) int {
 	//先前曾经有访问记录，则取剩余空间长度。
 	if index, exist := this.usedRecordsIndex.Load(key); exist {
-		this.visitorRecords[index.(int)].DeleteExpired()
+		this.visitorRecords[index.(int)].DeleteExpired(key)
 		return this.visitorRecords[index.(int)].UnUsedSize()
 	}
 	//若不存在，就取numberOfAllowedAccesses
@@ -110,24 +109,27 @@ func (this *singleRule) remainingVisitsIP(ip string) int {
 
 //增加一条访问记录,两种增加方法，一种是从备份文件中增加
 func (this *singleRule) add(key interface{}, reordFromBackUpFile ...int64) (err error) {
+	//在gc操作的时候，是不安全的
 	this.locker.Lock()
 	defer this.locker.Unlock()
 	//存在某访客，则在该访客记录中增加一条访问记录
 	if index, exist := this.usedRecordsIndex.Load(key); exist {
-		this.visitorRecords[index.(int)].DeleteExpired()
-		if len(reordFromBackUpFile) > 0 {
-			return this.visitorRecords[index.(int)].Push(reordFromBackUpFile[0])
-		} else {
-			return this.visitorRecords[index.(int)].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+		if len(this.visitorRecords) > index.(int) && this.visitorRecords[index.(int)].key == key {
+			this.visitorRecords[index.(int)].DeleteExpired(key)
+			if len(reordFromBackUpFile) > 0 {
+				return this.visitorRecords[index.(int)].Push(reordFromBackUpFile[0])
+			} else {
+				return this.visitorRecords[index.(int)].Push(time.Now().Add(this.defaultExpiration).UnixNano())
+			}
 		}
-
 	}
 	//该访客在这一段时间从来未出现过
 	//在visitorRecords中有未使用的空间时,根据notUsedVisitorRecordsIndex随机取一条出来使用
 	if len(this.notUsedVisitorRecordsIndex) > 0 {
 		for index := range this.notUsedVisitorRecordsIndex {
-			delete(this.notUsedVisitorRecordsIndex, index) //this.notUsedVisitorRecordsIndex.Remove(index)
+			delete(this.notUsedVisitorRecordsIndex, index)
 			this.usedRecordsIndex.Store(key, index)
+			this.visitorRecords[index].key = key
 			if len(reordFromBackUpFile) > 0 {
 				return this.visitorRecords[index].Push(reordFromBackUpFile[0])
 			} else {
@@ -137,6 +139,7 @@ func (this *singleRule) add(key interface{}, reordFromBackUpFile ...int64) (err 
 	}
 	//visitorRecords没有空余空间时，则需要插入一条新数据到visitorRecords中
 	queue := newCircleQueueInt64(this.numberOfAllowedAccesses)
+	queue.key = key
 	this.visitorRecords = append(this.visitorRecords, queue)
 	index := len(this.visitorRecords) - 1 //最后一条的位置即为新的索引位置
 	this.usedRecordsIndex.Store(key, index)
@@ -163,21 +166,21 @@ func (this *singleRule) deleteExpired() {
 
 //在特定时间间隔内执行一次删除过期数据操作
 func (this *singleRule) deleteExpiredOnce() {
-	this.usedRecordsIndex.Range(func(k, v interface{}) bool {
+	this.usedRecordsIndex.Range(func(key, Index interface{}) bool {
 		//range里面不能用defer
 		this.locker.Lock()
-		index := v.(int)
-		//防止越界出错，理论上不存在这种情况
+		index := Index.(int)
+		//防止越界出错，防止GC操作出问题
 		if index < len(this.visitorRecords) && index >= 0 {
-			this.visitorRecords[index].DeleteExpired()
+			this.visitorRecords[index].DeleteExpired(key)
 			//删除完过期数据之后，如果该用户的所有访问记录均过期了，那么就删除该用户
 			//并把该空间返还给notUsedVisitorRecordsIndex以便下次重复使用
 			if this.visitorRecords[index].UsedSize() == 0 {
-				this.usedRecordsIndex.Delete(k)
+				this.usedRecordsIndex.Delete(key)
 				this.notUsedVisitorRecordsIndex[index] = struct{}{}
 			}
 		} else {
-			this.usedRecordsIndex.Delete(k)
+			this.usedRecordsIndex.Delete(key)
 		}
 		this.locker.Unlock()
 		return true
