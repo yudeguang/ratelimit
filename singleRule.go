@@ -6,6 +6,7 @@
 package ratelimit
 
 import (
+	"strconv"
 	"sync"
 	"time"
 )
@@ -46,6 +47,18 @@ func newsingleRule(defaultExpiration time.Duration, numberOfAllowedAccesses int,
 	}
 	if estimatedNumberOfOnlineUsers <= 0 {
 		estimatedNumberOfOnlineUsers = numberOfAllowedAccesses
+		//普遍而言，某一段时间内在线用户数达到2000已经较大，所以除非用户指定estimatedNumberOfOnlineUserNum，否则最大值定义为2000
+		//在线用户数是指在某一段时间内访问过的唯一用户总数
+		if estimatedNumberOfOnlineUsers > 2000 {
+			estimatedNumberOfOnlineUsers = 2000
+		}
+		if estimatedNumberOfOnlineUsers*numberOfAllowedAccesses>800000000{
+			//estimatedNumberOfOnlineUsers*numberOfAllowedAccesses决定了内存占用大小,乘积极限大致在800000000，
+			//超过这个数字则程序很可能会启动失败。所以，一般不宜制定控制周期过大的规则，
+			//比如定义一个规则，每一个月，每个用户允许访问200万次,那么显然，在这个规则下，内存会超出。
+			//此时，建议减少监控的时间跨度，比规则改为，比如改为每个用户每天只许访问7万次。
+			panic("numberOfAllowedAccesses:("+strconv.Itoa(numberOfAllowedAccesses) +")*estimatedNumberOfOnlineUsers:("+strconv.Itoa(estimatedNumberOfOnlineUsers)+")="+strconv.Itoa(estimatedNumberOfOnlineUsers*numberOfAllowedAccesses)+" is too large,It will take up too much memory,Please reduce defaultExpiration,and then reduce numberOfAllowedAccesses")
+		}
 	}
 	//规范化defaultExpiration
 	//因为整个算法是针对相对较大的时间的，如果是短时间可直接用golang.org/x/time/rate，所以，这里最短清除周期定为1秒
