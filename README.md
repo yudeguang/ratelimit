@@ -41,13 +41,13 @@ func test1() {
 		r.AddRule(time.Minute*30, 1000) //每30分钟只允许访问1000次
 		r.AddRule(time.Hour*24, 5000)   //每天只允许访问500次
 	*/
-	//步骤三(可选):从本地磁盘加载历史访问数据
+	//步骤三(可选):从本地磁盘加载历史访问数据，初次运行，无备份文件则根据指定文件名自动创建
 	r.LoadingAndAutoSaveToDisc("test1", time.Second*10) //设置10秒备份一次(不填写则默认60秒备份一次)，备份到程序当前文件夹下，文件名为test1.ratelimit
 	log.Println("性能测试正式开始")
 	//步骤四：调用函数判断某用户是否允许访问
 	/*
 	   allow:= r.AllowVisit(user)
-	*/
+	*
 	//构建若干个用户，模拟用户访问
 	var users = make(map[string]bool)
 	for i := 1; i < 1000; i++ {
