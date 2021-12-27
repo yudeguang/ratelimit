@@ -77,7 +77,7 @@ func test1() {
 	wg.Wait()
 	t := int(time.Now().Sub(begin).Seconds())
 	log.Println("性能测试完成:共计访问", Visits, "次,", "耗时", t, "秒,即每秒约完成", Visits/t, "次操作")
-	//步骤五:程序退出前主动手动存盘
+	//步骤五(可选):程序退出前主动手动存盘
 	err := r.SaveToDiscOnce() //在自动备份的同时，还支持手动备份，一般在程序要退出时调用此函数
 	if err == nil {
 		log.Println("完成手动数据备份")
