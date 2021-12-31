@@ -179,9 +179,6 @@ func (q *autoGrowCircleQueueInt64) tempQueueLen() int {
 
 //删除过期数据
 func (q *autoGrowCircleQueueInt64) deleteExpired(key interface{}) {
-	if q.key != key {
-		return
-	}
 	q.locker.Lock()
 	defer q.locker.Unlock()
 	now := time.Now().UnixNano()
