@@ -37,9 +37,9 @@ func test1() {
 	//此处对于性能测试，为方便准确计数，只需要添加一条规则
 	r.AddRule(time.Second*10, 1000) //每10秒只允许访问1000次
 	/*
-		r.AddRule(time.Second*10, 10)   //每10秒只允许访问10次
-		r.AddRule(time.Minute*30, 1000) //每30分钟只允许访问1000次
-		r.AddRule(time.Hour*24, 5000)   //每天只允许访问500次
+	r.AddRule(time.Second*10, 10)   //每10秒只允许访问10次
+	r.AddRule(time.Minute*30, 1000) //每30分钟只允许访问1000次
+	r.AddRule(time.Hour*24, 5000)   //每天只允许访问500次
 	*/
 	//步骤三(可选):从本地磁盘加载历史访问数据
 	r.LoadingAndAutoSaveToDisc("test1", time.Second*10) //设置10秒备份一次(不填写则默认60秒备份一次)，备份到程序当前文件夹下，文件名为test1.ratelimit
