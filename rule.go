@@ -107,3 +107,17 @@ func (r *Rule) AllowVisitByIP4(ip string) bool {
 	}
 	return r.AllowVisit(ipInt64)
 }
+
+/*
+人工清空某用户的访问数据，主要针对某些特定客户的个性化需求，比如某个客户要求临时允许其访问更多的页面，
+此时，调用出函数，清空其历史访问数据，间接实现这个目的,例:
+ManualEmptyVisitorRecordsOf("andyyu")
+*/
+func (r *Rule) ManualEmptyVisitorRecordsOf(key interface{}) {
+	if len(r.rules) == 0 {
+		panic("rule is empty，please add rule by AddRule")
+	}
+	for i := range r.rules {
+		r.rules[i].manualEmptyVisitorRecordsOf(key)
+	}
+}

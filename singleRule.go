@@ -159,6 +159,17 @@ func (s *singleRule) addFromBackUpFile(key interface{}, reordFromBackUpFile int6
 	return s.visitorRecords[index].push(reordFromBackUpFile)
 }
 
+//清除访问记录
+func (s *singleRule) manualEmptyVisitorRecordsOf(key interface{}) {
+	index := s.getIndexFrom(key)
+	for {
+		_, err := s.visitorRecords[index].pop()
+		if err != nil {
+			break
+		}
+	}
+}
+
 //删除过期数据
 func (s *singleRule) deleteExpired() {
 	finished := true

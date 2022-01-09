@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yudeguang/ratelimit"
+	"./ratelimit"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 	test2()
 }
 
-//模拟1000个用户，累计进行总共约10亿次访问测试
+//模拟1000个用户，累计进行总共约1亿次访问测试
 func test1() {
 	var Visits int //因并发问题num比实际数量稍小
 	fmt.Println("\r\n测试1,性能测试，预计耗时1分钟，请耐心等待:")
@@ -41,13 +41,13 @@ func test1() {
 		r.AddRule(time.Minute*30, 1000) //每30分钟只允许访问1000次
 		r.AddRule(time.Hour*24, 5000)   //每天只允许访问500次
 	*/
-	//步骤三(可选):从本地磁盘加载历史访问数据，初次运行，无备份文件则根据指定文件名自动创建
+	//步骤三(可选):从本地磁盘加载历史访问数据
 	r.LoadingAndAutoSaveToDisc("test1", time.Second*10) //设置10秒备份一次(不填写则默认60秒备份一次)，备份到程序当前文件夹下，文件名为test1.ratelimit
 	log.Println("性能测试正式开始")
 	//步骤四：调用函数判断某用户是否允许访问
 	/*
 	   allow:= r.AllowVisit(user)
-	*
+	*/
 	//构建若干个用户，模拟用户访问
 	var users = make(map[string]bool)
 	for i := 1; i < 1000; i++ {
@@ -77,7 +77,7 @@ func test1() {
 	wg.Wait()
 	t := int(time.Now().Sub(begin).Seconds())
 	log.Println("性能测试完成:共计访问", Visits, "次,", "耗时", t, "秒,即每秒约完成", Visits/t, "次操作")
-	//步骤五(可选):程序退出前主动手动存盘
+	//步骤五:程序退出前主动手动存盘
 	err := r.SaveToDiscOnce() //在自动备份的同时，还支持手动备份，一般在程序要退出时调用此函数
 	if err == nil {
 		log.Println("完成手动数据备份")
@@ -122,7 +122,17 @@ func test2() {
 		r.PrintRemainingVisits(user)
 		fmt.Println("")
 	}
+	/*
+		在实际的平台运行过程中，往往会因为各种原因，某个客户的访问量过大，被系统临时禁止访问，这时候
+		这个客户就可能会投诉之类的，根据运营的实际需要，就需要手动清除掉某用户的访问记录，让其可以再继续访问。
+		对于函数ManualEmptyVisitorRecordsOf(),一般需要自行通过合理的方式,比如自行封装一个HTTP服务来间接调用
+	*/
+	log.Println("开始测试手动清楚某用户访问记录.")
+	log.Println("chery清空访问记录前,剩余:", r.RemainingVisits("chery"))
+	r.ManualEmptyVisitorRecordsOf("chery")
+	log.Println("chery清空访问记录后,剩余:", r.RemainingVisits("chery"))
 }
+
 ```
 结果如下：
 ```
