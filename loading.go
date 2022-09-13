@@ -21,7 +21,7 @@ func (r *Rule) loading() (err error) {
 	if err != nil {
 		return fmt.Errorf("Open backup file fail," + err.Error())
 	}
-	rs := iox.NewFromBytes(b)
+	rs := iox.NewReadSeekerFromBytes(b)
 	rulesNum, err := rs.ReadUint64()
 	if err != nil {
 		return err
