@@ -126,11 +126,11 @@ func (r *Rule) GetCurOnlineUsersVisitsDetail(num ...int) (CurOnlineUsersVisitsDe
 			visitsString = append(visitsString, strconv.Itoa(visits[i]))
 		}
 		if len(num) == 0 {
-			if len(CurOnlineUsers) >= 1000 {
+			if len(CurOnlineUsersVisitsDetail) >= 1000 {
 				break
 			}
 		} else {
-			if len(CurOnlineUsers) >= num[0] {
+			if len(CurOnlineUsersVisitsDetail) >= num[0] {
 				break
 			}
 		}
