@@ -16,6 +16,28 @@ const (
 )
 
 /*
+某用户剩余访问次数，只返回所有规则中时间范围跨度最大的一条规则的剩余访问次数。
+例如，假如规定了每天能访问多少次，每小时能返回多少次，每分钟能返回多少次
+那么此处只返回每天剩余访问次数。
+例:
+RemainingVisit("username")
+*/
+func (r *Rule) RemainingVisit(key interface{}) int {
+	return rightInt(r.RemainingVisits(key), 1)[0]
+}
+
+// 返回右往左最多n个元素
+func rightInt(s []int, n int) []int {
+	if len(s) < n {
+		return s
+	}
+	if n <= 0 {
+		return nil
+	}
+	return s[len(s)-n:]
+}
+
+/*
 某用户剩余访问次数，例:
 RemainingVisits("username")
 */
@@ -57,8 +79,8 @@ func (r *Rule) RemainingVisitsByIP4(ip string) []int {
 	return r.RemainingVisits(ipInt64)
 }
 
-//获得当前所有的在线用户,注意所有用int64存储的用户会被默认认为是IP地址，会被自动转换为IP的字符串形式输出以方便查看
-//如果不是本身就是以int64形式存储，而不是IP4，那么可以用ip4StringToInt64自己再转换回去
+// 获得当前所有的在线用户,注意所有用int64存储的用户会被默认认为是IP地址，会被自动转换为IP的字符串形式输出以方便查看
+// 如果不是本身就是以int64形式存储，而不是IP4，那么可以用ip4StringToInt64自己再转换回去
 func (r *Rule) GetCurOnlineUsers() []string {
 	//向切片Sli中插入没出现过的元素V，如果切片中有V，则不插入
 	var insertIgnoreString = func(s []string, v string) []string {
