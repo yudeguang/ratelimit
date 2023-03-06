@@ -8,6 +8,7 @@ package ratelimit
 import (
 	"fmt"
 	"sort"
+	"strconv"
 )
 
 const (
@@ -109,4 +110,31 @@ func (r *Rule) GetCurOnlineUsers() []string {
 	}
 	sort.Strings(users)
 	return users
+}
+
+// 返回所有用户的剩余返回次数详情,注意，为简单起见，返回值被转化为string类型 默认只返回1000
+func (r *Rule) GetCurOnlineUsersVisitsDetail(num ...int) (CurOnlineUsersVisitsDetail [][]string) {
+	if len(num) > 0 && num[0] < 1 {
+		panic("num must be>0")
+	}
+	CurOnlineUsers := r.GetCurOnlineUsers()
+	sort.Strings(CurOnlineUsers)
+	for _, user := range CurOnlineUsers {
+		visits := r.RemainingVisits(user)
+		var visitsString []string
+		for i := range visits {
+			visitsString = append(visitsString, strconv.Itoa(visits[i]))
+		}
+		if len(num) == 0 {
+			if len(CurOnlineUsers) >= 1000 {
+				break
+			}
+		} else {
+			if len(CurOnlineUsers) >= num[0] {
+				break
+			}
+		}
+		CurOnlineUsersVisitsDetail = append(CurOnlineUsersVisitsDetail, visitsString)
+	}
+	return
 }
