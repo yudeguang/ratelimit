@@ -95,7 +95,7 @@ func (r *Rule) GetCurOnlineUsers() []string {
 	}
 	var users []string
 	for i := range r.rules {
-		f := func(k, v interface{}) bool {
+		r.rules[i].usedVisitorRecordsIndex.Range(func(k, v interface{}) bool {
 			var user string
 			switch k.(type) {
 			case int64:
@@ -105,8 +105,7 @@ func (r *Rule) GetCurOnlineUsers() []string {
 			}
 			users = insertIgnoreString(users, user)
 			return true
-		}
-		r.rules[i].usedVisitorRecordsIndex.Range(f)
+		})
 	}
 	sort.Strings(users)
 	return users
@@ -122,6 +121,7 @@ func (r *Rule) GetCurOnlineUsersVisitsDetail(num ...int) (CurOnlineUsersVisitsDe
 	for _, user := range CurOnlineUsers {
 		visits := r.RemainingVisits(user)
 		var visitsString []string
+		visitsString = append(visitsString, user)
 		for i := range visits {
 			visitsString = append(visitsString, strconv.Itoa(visits[i]))
 		}
