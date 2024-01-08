@@ -121,3 +121,13 @@ func (r *Rule) ManualEmptyVisitorRecordsOf(key interface{}) {
 		r.rules[i].manualEmptyVisitorRecordsOf(key)
 	}
 }
+
+// 人工清空所有用户的访问数据
+func (r *Rule) ManualEmptyVisitorRecordsOfAll() {
+	for i := range r.rules {
+		r.rules[i].usedVisitorRecordsIndex.Range(func(k, v interface{}) bool {
+			r.rules[i].manualEmptyVisitorRecordsOf(k)
+			return true
+		})
+	}
+}
